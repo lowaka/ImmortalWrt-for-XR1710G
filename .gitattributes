@@ -13,7 +13,7 @@ package/base-files/files/bin/config_generate text eol=lf
 # lucky package: enforce LF for init/config/scripts
 package/lucky/** text eol=lf
 
-# 同步 naoki66 / ImmortalWrt 上游时，冲突情况下保留本仓库版本。
-# 只有 build-firmware.yml 需要保留（里面是本仓库的定制 hook），
-# 其余文件（config.seed 等）保持跟随上游更新。
-.github/workflows/build-firmware.yml merge=keep-ours
+# luci JS must stay LF: the LuCI JS minifier turns a CRLF after a backslash
+# line continuation into two LFs, breaking multi-line string literals
+package/luci-app-netmode/** text eol=lf
+package/luci-app-mesh-conf/** text eol=lf

@@ -1,6 +1,7 @@
 name: Build XR1710G Firmware
-# 说明：本文件 = naoki66 上游 workflow + 本仓库定制 hook（custom/ 目录）。
-# 同步上游时若与本文件冲突，会保留本文件版本（见 .gitattributes）。
+# 本文件 = naoki66 上游 workflow + 本仓库定制 hook（custom/ 目录）。
+# 同步上游时若与本文件冲突会保留本文件版本（见 sync-upstream.yml 里写入的 .git/info/attributes）。
+# 定制文件名规则：immortalwrt-<日期>-<仓库提交>-<上游提交>-<目标>-<设备>-<镜像类型>.itb
 
 on:
   push:
@@ -8,6 +9,14 @@ on:
       - master
   workflow_dispatch:
     inputs:
+      config_seed:
+        description: 'Build config'
+        required: true
+        default: '1710.config'
+        type: choice
+        options:
+          - 1710.config
+          - 2010.config
       release_type:
         description: 'Release Type'
         required: true
@@ -47,20 +56,16 @@ jobs:
           git fetch --no-tags upstream master
 
           build_date=$(TZ=Asia/Shanghai date +'%Y%m%d')
-          repo_commit=$(git rev-parse --short=10 HEAD)
+          repo_commit=$(git rev-parse --short=8 HEAD)
           upstream_base=$(git merge-base HEAD upstream/master)
-          upstream_commit=$(git rev-parse --short=10 "$upstream_base")
+          upstream_commit=$(git rev-parse --short=8 "$upstream_base")
           build_id="${build_date}-${repo_commit}-${upstream_commit}"
-          version_number="$build_id"
-          version_code="${repo_commit}-${upstream_commit}"
 
           echo "date=$build_date" >> $GITHUB_OUTPUT
           echo "build_id=$build_id" >> $GITHUB_OUTPUT
           echo "repo_commit=$repo_commit" >> $GITHUB_OUTPUT
           echo "upstream_commit=$upstream_commit" >> $GITHUB_OUTPUT
-          echo "version_number=$version_number" >> $GITHUB_OUTPUT
-          echo "version_code=$version_code" >> $GITHUB_OUTPUT
-          echo "Build version: ImmortalWrt naoki66 $version_number"
+          echo "Build version: ImmortalWrt for XR1710G ${build_id}"
 
       - name: Setup build environment
         run: |
@@ -69,8 +74,8 @@ jobs:
 
       - name: Install feeds
         run: |
-          # 自定义 feed 放在最前面：脚本按 feeds.conf 顺序取优先级，
-          # 同名包（如 luci-app-openclash）会优先使用自定义源里的最新版。
+          # [custom] 自定义 feed 放在最前面：feeds 脚本按 feeds.conf 顺序取优先级，
+          # 同名包（如 luci-app-openclash）优先使用自定义源里的最新版。
           if [ -f custom/feeds.conf.custom ]; then
             cat custom/feeds.conf.custom > feeds.conf
           else
@@ -81,38 +86,46 @@ jobs:
           ./scripts/feeds install -a
           bash scripts/fix-stale-golang-host.sh
 
+      - name: Apply feed patches
+        run: |
+          # [custom] 上游脚本在旧树里可能还不存在，存在才执行
+          if [ -f scripts/apply-feed-patches.sh ]; then
+            FEED_PATCHES_STRICT=1 bash scripts/apply-feed-patches.sh
+          fi
+
       - name: Configure
         run: |
-          cp config.seed .config
-          # 应用自定义插件开关（与 config.seed 解耦，避免同步上游时被覆盖）
+          # [custom] push 触发时 inputs 为空，回退到 1710.config
+          config_seed='${{ inputs.config_seed }}'
+          cp "${config_seed:-1710.config}" .config
+          # [custom] 应用自定义插件开关（与 config 文件解耦，同步上游不会被覆盖）
           if [ -f custom/config.fragment ]; then
             cat custom/config.fragment >> .config
           fi
+          # [custom] VERSION_DIST / VERSION_NUMBER 决定文件名前缀
+          VERSION_DIST='immortalwrt' \
+          VERSION_NUMBER='${{ steps.version.outputs.build_id }}' \
           BUILD_DATE='${{ steps.version.outputs.date }}' \
           BUILD_ID='${{ steps.version.outputs.build_id }}' \
           REPO_COMMIT='${{ steps.version.outputs.repo_commit }}' \
           UPSTREAM_COMMIT='${{ steps.version.outputs.upstream_commit }}' \
-          VERSION_NUMBER='${{ steps.version.outputs.version_number }}' \
-          VERSION_CODE='${{ steps.version.outputs.version_code }}' \
+          VERSION_CODE='${{ steps.version.outputs.build_id }}' \
           bash scripts/set-build-version.sh .config
-          # 统一文件名：immortalwrt-<日期>-<仓库提交>-<上游提交>-<目标>-<设备>-<镜像类型>.itb
-          # 去掉重复的 EXTRA_IMAGE_NAME 与 VERSION_CODE 片段，避免文件名里版本号叠三遍
-          {
-            echo 'CONFIG_VERSION_DIST="immortalwrt"'
-            echo 'CONFIG_VERSION_NUMBER="${{ steps.version.outputs.version_number }}"'
-            echo '# CONFIG_EXTRA_IMAGE_NAME is not set'
-            echo '# CONFIG_VERSION_CODE_FILENAMES is not set'
-          } >> .config
           make defconfig
-          grep -E 'CONFIG_(IMAGEOPT|EXTRA_IMAGE_NAME|VERSIONOPT|VERSION_DIST|VERSION_NUMBER|VERSION_CODE)=' .config
+          grep -E 'CONFIG_(IMAGEOPT|EXTRA_IMAGE_NAME|VERSIONOPT|VERSION_DIST|VERSION_NUMBER|VERSION_CODE|VERSION_FILENAMES|VERSION_CODE_FILENAMES)[= ]' .config
 
       - name: Prepare custom files overlay
         run: |
+          # [custom] 固件文件覆盖层（首次开机后台地址 192.168.5.1 等）
           mkdir -p files
           cp -a custom/files/. files/
 
       - name: Bundle latest OpenClash core
-        run: bash custom/scripts/fetch-openclash-core.sh
+        run: |
+          # [custom] 编译时把最新 mihomo 内核打进固件
+          if [ -f custom/scripts/fetch-openclash-core.sh ]; then
+            bash custom/scripts/fetch-openclash-core.sh
+          fi
 
       - name: Download sources
         run: make download -j$(nproc)

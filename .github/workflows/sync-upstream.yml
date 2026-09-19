@@ -42,6 +42,12 @@ jobs:
           # 冲突时保留本仓库版本（.gitattributes 中标记 merge=keep-ours 的文件使用该驱动）
           git config merge.keep-ours.name "keep our version on conflict"
           git config merge.keep-ours.driver true
+          # 只在 CI 生效的属性文件：本仓库定制的 workflow 冲突时保留自己的版本。
+          # 放在 .git/info/attributes（不进版本库），这样 .gitattributes 始终跟随上游、不再冲突。
+          printf '%s\n' \
+            '.github/workflows/build-firmware.yml merge=keep-ours' \
+            '.github/workflows/sync-upstream.yml merge=keep-ours' \
+            > .git/info/attributes
 
       - name: Add upstream remotes
         run: |
@@ -74,6 +80,16 @@ jobs:
             changed=true
           done
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Check upstream workflow drift
+        if: always()
+        run: |
+          recorded="$(tr -d '[:space:]' < custom/upstream/build-firmware.yml.sha 2>/dev/null || true)"
+          current="$(git rev-parse parent/master:.github/workflows/build-firmware.yml 2>/dev/null || true)"
+          echo "上游 build-firmware.yml blob=$current（本仓库记录的 hook 基线=$recorded）"
+          if [ -n "$recorded" ] && [ -n "$current" ] && [ "$recorded" != "$current" ]; then
+            echo "::warning::naoki66 更新了 .github/workflows/build-firmware.yml，本仓库仍用自己的定制版，需要手工把上游新改动合进来"
+          fi
 
       - name: Push to origin
         if: steps.merge.outputs.changed == 'true'
