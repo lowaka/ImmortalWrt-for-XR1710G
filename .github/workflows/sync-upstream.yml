@@ -65,21 +65,35 @@ jobs:
         id: merge
         run: |
           changed=false
+          merged=""
+          skipped=""
           for ref in parent/master upstream/master; do
             if git merge-base --is-ancestor "$ref" HEAD; then
               echo "== $ref：没有新提交，跳过"
               continue
             fi
-            echo "== 合并 $ref"
-            if ! git merge --no-edit "$ref"; then
-              echo "::error::合并 $ref 出现冲突，需要人工处理。冲突文件："
+            ahead="$(git rev-list --count HEAD.."$ref")"
+            echo "== $ref：领先 HEAD ${ahead} 个提交，尝试合并"
+            if git merge --no-edit "$ref"; then
+              changed=true
+              merged="$merged $ref"
+              continue
+            fi
+            if [ "$ref" = "parent/master" ]; then
+              echo "::error::合并 parent/master（naoki66）出现冲突，需要人工处理。冲突文件："
               git diff --name-only --diff-filter=U
               git merge --abort || true
               exit 1
             fi
-            changed=true
+            echo "::warning::合并 upstream/master（immortalwrt）出现冲突，已撤销本次合并并跳过；immortalwrt 由 naoki66 负责合并，本仓库只需跟随 naoki66 的树。冲突文件："
+            git diff --name-only --diff-filter=U
+            git merge --abort || true
+            skipped="$skipped $ref"
           done
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "merged=$merged" >> "$GITHUB_OUTPUT"
+          echo "skipped=$skipped" >> "$GITHUB_OUTPUT"
+          echo "已合并：${merged:-无}；因冲突跳过：${skipped:-无}"
 
       - name: Check upstream workflow drift
         if: always()
@@ -110,5 +124,7 @@ jobs:
         if: always()
         run: |
           echo "=== Sync Result ==="
+          echo "本次已合并：${{ steps.merge.outputs.merged }}"
+          echo "因冲突跳过：${{ steps.merge.outputs.skipped }}"
           git log --oneline -5 || true
           git status --short || true
