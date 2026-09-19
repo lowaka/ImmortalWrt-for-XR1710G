@@ -114,7 +114,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh workflow run build-firmware.yml --repo "${{ github.repository }}" --ref master; then
+          if gh workflow run build-firmware.yml --repo "${{ github.repository }}" --ref master -f release_type=release; then
             echo "已触发固件构建：Build XR1710G Firmware"
           else
             echo "::warning::自动触发构建失败，请手动运行 Build XR1710G Firmware"

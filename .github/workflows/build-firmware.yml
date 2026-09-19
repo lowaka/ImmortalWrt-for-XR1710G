@@ -18,9 +18,9 @@ on:
           - 1710.config
           - 2010.config
       release_type:
-        description: 'Release Type'
+        description: 'Release Type（默认每次构建都发布 Release）'
         required: true
-        default: 'none'
+        default: 'release'
         type: choice
         options:
           - none
