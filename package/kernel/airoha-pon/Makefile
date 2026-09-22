@@ -34,7 +34,6 @@ define KernelPackage/airoha-gpon-en757x
   $(call KernelPackage/airoha-pon/Default)
   DEPENDS+=@TARGET_airoha_en7523
   TITLE:=Airoha EN757x GPON driver (v1)
-  VARIANT:=v1
   FILES:= \
 	$(PKG_BUILD_DIR)/gpon-en757x/xpon_phy/phy.ko \
 	$(PKG_BUILD_DIR)/gpon-en757x/xpon/xpon.ko
@@ -47,9 +46,9 @@ endef
 
 define KernelPackage/airoha-xpon-en757x
   $(call KernelPackage/airoha-pon/Default)
-  DEPENDS+=@(TARGET_airoha_an7581||TARGET_airoha_an7583) +kmod-airoha-i2c
+  DEPENDS+=@TARGET_airoha_an7581_DEVICE_gemtek_xg2010g-ubi +kmod-airoha-i2c
+  KCONFIG:=CONFIG_AIROHA_PON_COMPAT=y
   TITLE:=Airoha EN757x xPON driver (v2)
-  VARIANT:=v2
   FILES:= \
 	$(PON_BSP_DIR)/airoha_ecnt_hook.ko \
 	$(PON_BSP_DIR)/airoha_ecnt_scu.ko \
@@ -70,9 +69,8 @@ endef
 
 define KernelPackage/airoha-pon-plugins
   $(call KernelPackage/airoha-pon/Default)
-  DEPENDS+=@TARGET_airoha_an7581 +kmod-airoha-xpon-en757x +airoha-pon-firmware
+  DEPENDS+=@TARGET_airoha_an7581_DEVICE_gemtek_xg2010g-ubi +kmod-airoha-xpon-en757x +airoha-pon-firmware
   TITLE:=Airoha EN7572 xPON helper plugins
-  VARIANT:=v2
   FILES:= \
 	$(PON_PLUGIN_DIR)/econet_bob/econet_bob.ko \
 	$(PON_PLUGIN_DIR)/en7572/en7572.ko
@@ -85,9 +83,8 @@ endef
 
 define KernelPackage/airoha-pon-dataplane
   $(call KernelPackage/airoha-pon/Default)
-  DEPENDS+=@TARGET_airoha_an7581 +kmod-airoha-xpon-en757x
+  DEPENDS+=@TARGET_airoha_an7581_DEVICE_gemtek_xg2010g-ubi +kmod-airoha-xpon-en757x
   TITLE:=Airoha xPON VLAN, MAC filter and mapping plugins
-  VARIANT:=v2
   FILES:= \
 	$(PON_PLUGIN_DIR)/xpon_map/xponmap.ko \
 	$(PON_PLUGIN_DIR)/pon_vlan/ponvlan.ko \
@@ -101,9 +98,8 @@ endef
 
 define KernelPackage/airoha-xpon-igmp
   $(call KernelPackage/airoha-pon/Default)
-  DEPENDS+=@TARGET_airoha_an7581 +kmod-airoha-pon-dataplane
+  DEPENDS+=@TARGET_airoha_an7581_DEVICE_gemtek_xg2010g-ubi +kmod-airoha-pon-dataplane
   TITLE:=Airoha 10G xPON IGMP plugin
-  VARIANT:=v2
   FILES:=$(PON_PLUGIN_DIR)/xpon_igmp/xpon_igmp.ko
   AUTOLOAD:=$(call AutoLoad,92,xpon_igmp)
 endef
@@ -114,9 +110,8 @@ endef
 
 define KernelPackage/airoha-gpon-igmp
   $(call KernelPackage/airoha-pon/Default)
-  DEPENDS+=@TARGET_airoha_an7581 +kmod-airoha-pon-dataplane
+  DEPENDS+=@TARGET_airoha_an7581_DEVICE_gemtek_xg2010g-ubi +kmod-airoha-pon-dataplane
   TITLE:=Airoha legacy GPON IGMP plugin
-  VARIANT:=v2
   FILES:=$(PON_PLUGIN_DIR)/gpon_igmp/gpon_igmp.ko
   AUTOLOAD:=$(call AutoLoad,92,gpon_igmp)
 endef
@@ -128,7 +123,7 @@ endef
 define Package/airoha-pon-firmware
   SECTION:=firmware
   CATEGORY:=Firmware
-  DEPENDS:=@TARGET_airoha_an7581
+  DEPENDS:=@TARGET_airoha_an7581_DEVICE_gemtek_xg2010g-ubi
   TITLE:=Airoha EN7572 LDDLA firmware
   PKGARCH:=all
 endef
@@ -196,8 +191,12 @@ define Build/Patch
 	$(call PatchDir,$(PKG_BUILD_DIR),$(AIROHA_PON_SOURCE_DIR)/patches,)
 endef
 
-ifeq ($(BUILD_VARIANT),v1)
-define Build/Compile
+define Build/Compile/i2c
+	+$(KERNEL_MAKE) $(PKG_JOBS) M="$(PKG_BUILD_DIR)/i2c-airoha" \
+		modules
+endef
+
+define Build/Compile/v1
 	+$(KERNEL_MAKE) $(PKG_JOBS) M="$(PKG_BUILD_DIR)/gpon-en757x/xpon_phy" \
 		KCFLAGS="$(PON_INCLUDE_FLAGS) -DTCSUPPORT_CPU_EN7521=1" \
 		MODULES_PHY_DIR="$(PKG_BUILD_DIR)/gpon-en757x/xpon_phy" \
@@ -214,12 +213,8 @@ define Build/Compile
 		TCSUPPORT_CPU_EN7521=1 \
 		modules
 endef
-endif
 
-ifeq ($(BUILD_VARIANT),v2)
-define Build/Compile
-	+$(KERNEL_MAKE) $(PKG_JOBS) M="$(PKG_BUILD_DIR)/i2c-airoha" \
-		modules
+define Build/Compile/v2
 	+$(KERNEL_MAKE) $(PKG_JOBS) M="$(PON_BSP_DIR)" \
 		AIROHA_PON_CFLAGS="$(PON_INCLUDE_FLAGS) $(PON_V2_CPU_CFLAGS)" \
 		$(PON_V2_CPU_MAKE) \
@@ -284,7 +279,14 @@ define Build/Compile
 		$(PON_PLUGIN_MAKE) \
 		modules
 endef
-endif
+
+# Build only the hardware-specific part selected by the active target. The
+# package definitions share one source tree and therefore one build directory.
+define Build/Compile
+	$(if $(filter y,$(CONFIG_TARGET_airoha_an7581) $(CONFIG_TARGET_airoha_an7583)),$(Build/Compile/i2c))
+	$(if $(filter y,$(CONFIG_TARGET_airoha_en7523)),$(Build/Compile/v1))
+	$(if $(filter y,$(CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g-ubi)),$(Build/Compile/v2))
+endef
 
 $(eval $(call KernelPackage,airoha-gpon-en757x))
 $(eval $(call KernelPackage,airoha-i2c))

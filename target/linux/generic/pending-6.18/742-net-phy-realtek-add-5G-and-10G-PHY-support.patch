@@ -698,7 +698,8 @@ Signed-off-by: Balázs Triszka <info@balika011.hu>
  static struct phy_driver realtek_drvs[] = {
  	{
  		PHY_ID_MATCH_EXACT(0x00008201),
-@@ -3097,6 +3710,108 @@ static struct phy_driver realtek_drvs[]
+@@ -3713,7 +4326,109 @@ static struct phy_driver realtek_drvs[]
+ 		.handle_interrupt	= rtl8261x_handle_interrupt,
  		.soft_reset		= genphy_c45_pma_soft_reset,
  		.suspend		= genphy_c45_pma_suspend,
  		.resume			= genphy_c45_pma_resume,
